@@ -1,0 +1,25 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: compensation-service
+
+aws:
+  region: us-east-1
+  dynamodb:
+    endpoint: ${AWS_DYNAMODB_ENDPOINT:http://localstack:4566}
+  sqs:
+    endpoint: ${AWS_SQS_ENDPOINT:http://localstack:4566}
+    queues:
+      compensation: ${COMPENSATION_QUEUE_URL:http://localstack:4566/000000000000/compensation-queue}
+      audit: ${AUDIT_QUEUE_URL:http://localstack:4566/000000000000/workflow-audit-queue}
+
+sqs:
+  poll:
+    wait-seconds: 5
+    max-messages: 5
+
+logging:
+  level:
+    com.flowrescue: DEBUG

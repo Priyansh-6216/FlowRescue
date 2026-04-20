@@ -1,0 +1,30 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: workflow-api
+
+aws:
+  region: us-east-1
+  dynamodb:
+    endpoint: ${AWS_DYNAMODB_ENDPOINT:http://localstack:4566}
+  sqs:
+    endpoint: ${AWS_SQS_ENDPOINT:http://localstack:4566}
+    queues:
+      workflow-task: ${WORKFLOW_TASK_QUEUE_URL:http://localstack:4566/000000000000/workflow-task-queue}
+      audit: ${AUDIT_QUEUE_URL:http://localstack:4566/000000000000/workflow-audit-queue}
+
+dynamodb:
+  tables:
+    workflow-execution: WorkflowExecution
+    idempotency: IdempotencyRecord
+    audit-trail: AuditTrail
+
+# CORS for dashboard
+cors:
+  allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+logging:
+  level:
+    com.flowrescue: DEBUG

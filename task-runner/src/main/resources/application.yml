@@ -1,0 +1,37 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: task-runner
+
+aws:
+  region: us-east-1
+  dynamodb:
+    endpoint: ${AWS_DYNAMODB_ENDPOINT:http://localstack:4566}
+  sqs:
+    endpoint: ${AWS_SQS_ENDPOINT:http://localstack:4566}
+    queues:
+      workflow-task: ${WORKFLOW_TASK_QUEUE_URL:http://localstack:4566/000000000000/workflow-task-queue}
+      recovery: ${RECOVERY_QUEUE_URL:http://localstack:4566/000000000000/recovery-queue}
+      audit: ${AUDIT_QUEUE_URL:http://localstack:4566/000000000000/workflow-audit-queue}
+
+# Failure injection flags — set to true via environment to simulate failures
+failure:
+  injection:
+    validate-member: ${FAIL_VALIDATE_MEMBER:false}
+    duplicate-check: ${FAIL_DUPLICATE_CHECK:false}
+    pricing: ${FAIL_PRICING:false}
+    payment-instruction: ${FAIL_PAYMENT_INSTRUCTION:false}
+    claim-persistence: ${FAIL_CLAIM_PERSISTENCE:false}
+    notification: ${FAIL_NOTIFICATION:false}
+
+# Polling config
+sqs:
+  poll:
+    wait-seconds: 5
+    max-messages: 5
+
+logging:
+  level:
+    com.flowrescue: DEBUG

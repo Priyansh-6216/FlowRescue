@@ -1,0 +1,39 @@
+# ── Java / Maven ──────────────────────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+*.iml
+.mvn/
+mvnw
+mvnw.cmd
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── Node / npm ────────────────────────────────────────────────────────────────
+node_modules/
+dashboard/node_modules/
+dist/
+dashboard/dist/
+.vite/
+dashboard/.vite/
+
+# ── Environment ───────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+.dockerignore

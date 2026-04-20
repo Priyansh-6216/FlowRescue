@@ -1,0 +1,124 @@
+version: "3.9"
+
+services:
+
+  # ─── LocalStack (AWS: DynamoDB, SQS) ─────────────────────────────────────────
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: flowrescue-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=dynamodb,sqs
+      - DEFAULT_REGION=us-east-1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - ./scripts/init-localstack.sh:/etc/localstack/init/ready.d/init-localstack.sh
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ─── Workflow API (port 8080) ─────────────────────────────────────────────────
+  workflow-api:
+    build:
+      context: .
+      dockerfile: workflow-api/Dockerfile
+    container_name: flowrescue-workflow-api
+    ports:
+      - "8080:8080"
+    environment:
+      - AWS_DYNAMODB_ENDPOINT=http://localstack:4566
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - WORKFLOW_TASK_QUEUE_URL=http://localstack:4566/000000000000/workflow-task-queue
+      - AUDIT_QUEUE_URL=http://localstack:4566/000000000000/workflow-audit-queue
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: on-failure
+
+  # ─── Task Runner (port 8083) ──────────────────────────────────────────────────
+  task-runner:
+    build:
+      context: .
+      dockerfile: task-runner/Dockerfile
+    container_name: flowrescue-task-runner
+    ports:
+      - "8083:8083"
+    environment:
+      - AWS_DYNAMODB_ENDPOINT=http://localstack:4566
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - WORKFLOW_TASK_QUEUE_URL=http://localstack:4566/000000000000/workflow-task-queue
+      - RECOVERY_QUEUE_URL=http://localstack:4566/000000000000/recovery-queue
+      - AUDIT_QUEUE_URL=http://localstack:4566/000000000000/workflow-audit-queue
+      - FAIL_VALIDATE_MEMBER=false
+      - FAIL_DUPLICATE_CHECK=false
+      - FAIL_PRICING=false
+      - FAIL_PAYMENT_INSTRUCTION=false
+      - FAIL_CLAIM_PERSISTENCE=false
+      - FAIL_NOTIFICATION=false
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: on-failure
+
+  # ─── Recovery Service (port 8081) ────────────────────────────────────────────
+  recovery-service:
+    build:
+      context: .
+      dockerfile: recovery-service/Dockerfile
+    container_name: flowrescue-recovery-service
+    ports:
+      - "8081:8081"
+    environment:
+      - AWS_DYNAMODB_ENDPOINT=http://localstack:4566
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - RECOVERY_QUEUE_URL=http://localstack:4566/000000000000/recovery-queue
+      - WORKFLOW_TASK_QUEUE_URL=http://localstack:4566/000000000000/workflow-task-queue
+      - COMPENSATION_QUEUE_URL=http://localstack:4566/000000000000/compensation-queue
+      - MANUAL_REVIEW_QUEUE_URL=http://localstack:4566/000000000000/manual-review-queue
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: on-failure
+
+  # ─── Compensation Service (port 8082) ────────────────────────────────────────
+  compensation-service:
+    build:
+      context: .
+      dockerfile: compensation-service/Dockerfile
+    container_name: flowrescue-compensation-service
+    ports:
+      - "8082:8082"
+    environment:
+      - AWS_DYNAMODB_ENDPOINT=http://localstack:4566
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - COMPENSATION_QUEUE_URL=http://localstack:4566/000000000000/compensation-queue
+      - AUDIT_QUEUE_URL=http://localstack:4566/000000000000/workflow-audit-queue
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: on-failure
+
+  # ─── React Dashboard (port 5173) ─────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: flowrescue-dashboard
+    ports:
+      - "5173:80"
+    depends_on:
+      - workflow-api
+      - task-runner
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080
+      - VITE_WS_URL=http://localhost:8080/ws
+      - VITE_TASK_RUNNER_URL=http://localhost:8083
+
+networks:
+  default:
+    name: flowrescue-network

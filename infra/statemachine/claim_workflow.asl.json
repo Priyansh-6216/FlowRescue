@@ -1,0 +1,225 @@
+{
+  "Comment": "FlowRescue — Healthcare Claim Processing Workflow (AWS Step Functions Standard)",
+  "StartAt": "ValidateMember",
+  "States": {
+    "ValidateMember": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:validate-member",
+      "ResultPath": "$.steps.validateMember",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableException", "Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "CheckDuplicateClaim"
+    },
+    "CheckDuplicateClaim": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:check-duplicate-claim",
+      "ResultPath": "$.steps.checkDuplicate",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableException", "Lambda.ServiceException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "CalculatePayable"
+    },
+    "CalculatePayable": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:calculate-payable",
+      "ResultPath": "$.steps.calculatePayable",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableException", "Lambda.ServiceException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "CreatePaymentInstruction"
+    },
+    "CreatePaymentInstruction": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:create-payment-instruction",
+      "Comment": "SIDE-EFFECT: Creates a real payment instruction. Requires compensation on failure.",
+      "ResultPath": "$.steps.createPayment",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableException", "Lambda.ServiceException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFailureWithCompensation",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "PersistClaimDecision"
+    },
+    "PersistClaimDecision": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:persist-claim-decision",
+      "Comment": "SIDE-EFFECT: Persists adjudication. Requires compensation on failure.",
+      "ResultPath": "$.steps.persistClaim",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableException", "Lambda.ServiceException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFailureWithCompensation",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "SendNotification"
+    },
+    "SendNotification": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:send-notification",
+      "ResultPath": "$.steps.sendNotification",
+      "Retry": [
+        {
+          "ErrorEquals": ["RetryableException", "Lambda.ServiceException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFailureWithCompensation",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "MarkWorkflowSuccess"
+    },
+    "MarkWorkflowSuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:mark-workflow-success",
+      "End": true
+    },
+    "HandleFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:classify-failure",
+      "ResultPath": "$.recovery",
+      "Next": "RecoveryBranch"
+    },
+    "HandleFailureWithCompensation": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:classify-failure",
+      "ResultPath": "$.recovery",
+      "Next": "RecoveryBranch"
+    },
+    "RecoveryBranch": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.recovery.decision",
+          "StringEquals": "RETRY_NOW",
+          "Next": "ValidateMember"
+        },
+        {
+          "Variable": "$.recovery.decision",
+          "StringEquals": "RETRY_LATER",
+          "Next": "ScheduleRetryLater"
+        },
+        {
+          "Variable": "$.recovery.decision",
+          "StringEquals": "COMPENSATE",
+          "Next": "StartCompensation"
+        },
+        {
+          "Variable": "$.recovery.decision",
+          "StringEquals": "MANUAL_REVIEW",
+          "Next": "EscalateToManualReview"
+        }
+      ],
+      "Default": "EscalateToManualReview"
+    },
+    "ScheduleRetryLater": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:schedule-delayed-retry",
+      "Comment": "Creates an EventBridge Scheduler one-time schedule to wake this workflow.",
+      "Next": "WorkflowPaused"
+    },
+    "WorkflowPaused": {
+      "Type": "Wait",
+      "Seconds": 900,
+      "Comment": "Wait 15 minutes before re-attempting. In production, use Scheduler callback.",
+      "Next": "ValidateMember"
+    },
+    "StartCompensation": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:start-compensation",
+      "Comment": "Triggers compensation in reverse order of completedSteps.",
+      "ResultPath": "$.compensation",
+      "Next": "CompensateSendNotification"
+    },
+    "CompensateSendNotification": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:compensate-send-notification",
+      "ResultPath": "$.compensation.sendNotification",
+      "Next": "CompensatePersistClaimDecision"
+    },
+    "CompensatePersistClaimDecision": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:compensate-persist-claim",
+      "ResultPath": "$.compensation.persistClaim",
+      "Next": "CompensateCreatePaymentInstruction"
+    },
+    "CompensateCreatePaymentInstruction": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:compensate-payment-instruction",
+      "ResultPath": "$.compensation.payment",
+      "Next": "MarkWorkflowCompensated"
+    },
+    "MarkWorkflowCompensated": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:mark-workflow-compensated",
+      "End": true
+    },
+    "EscalateToManualReview": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:escalate-manual-review",
+      "Comment": "Publishes to manual-review-queue and marks workflow MANUAL_REVIEW.",
+      "End": true
+    }
+  }
+}

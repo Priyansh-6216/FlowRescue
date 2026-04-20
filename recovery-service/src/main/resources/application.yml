@@ -1,0 +1,35 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: recovery-service
+
+aws:
+  region: us-east-1
+  dynamodb:
+    endpoint: ${AWS_DYNAMODB_ENDPOINT:http://localstack:4566}
+  sqs:
+    endpoint: ${AWS_SQS_ENDPOINT:http://localstack:4566}
+    queues:
+      recovery: ${RECOVERY_QUEUE_URL:http://localstack:4566/000000000000/recovery-queue}
+      workflow-task: ${WORKFLOW_TASK_QUEUE_URL:http://localstack:4566/000000000000/workflow-task-queue}
+      compensation: ${COMPENSATION_QUEUE_URL:http://localstack:4566/000000000000/compensation-queue}
+      manual-review: ${MANUAL_REVIEW_QUEUE_URL:http://localstack:4566/000000000000/manual-review-queue}
+
+# Retry thresholds
+recovery:
+  retry:
+    max-immediate: 3
+    max-delayed: 5
+  delayed-retry:
+    intervals-minutes: [15, 60, 360]   # 15min, 1hr, 6hr
+
+sqs:
+  poll:
+    wait-seconds: 5
+    max-messages: 5
+
+logging:
+  level:
+    com.flowrescue: DEBUG
